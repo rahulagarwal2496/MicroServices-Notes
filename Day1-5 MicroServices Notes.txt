@@ -1,0 +1,478 @@
+============================================================================================================================
+Day 1 30
+============================================================================================================================
+1) Create Eureka Server / Service Registry:-
+###################################################
+
+a) Create a Spring Boot project named service-registry with package name com.serviceregistry
+ Add dependency: Eureka Server and SpringBoot Dev Tools
+
+b) Add @EnableEurekaServer in main class (ServiceRegistryApplication) and import it.
+
+c) Add in application.properties file:                 
+         server.port=8761 			    //to run eureka Server on port 8761                                   
+         eureka.client.register-with-eureka=false  //we are telling that donot register eureka server itself as a client.            
+         eureka.client.fetch-registry=false 	  //when i try to get client details i donot want my eureka server 
+						 //to treat this as client & even try to make an attempt to fetch the details.
+Note: 
+This tells the Eureka Server:
+Don't register itself as a client.
+Don't try to fetch registry data (because it's the registry).                
+--------------------------------------------------------------
+|      | Run Eureka Server                                    
+|      | Access: http://localhost:8761   go to browser and hit http://localhost:8080 
+					 it shows all microservices registered with eureka server.                     
+==============================================================
+By running eureka server on port 8761 all your microservices will automatically registered with eureka server without doing anything.
+
+
+2) Create another project named microservice-1 and package name com.microservice1
+ Add dependency: Eureka Discovery Client, Spring Web and SpringBoot Dev Tools
+
+  Add @EnableDiscoveryClient in main class (ServiceRegistryApplication) and import it.             
+  
+  Configure application.properties with port number where you want to run your microservice:                        
+         server.port=8081   //run this microservice on port 8081
+
+  right click on your project microservice-1 and run as springboot app
+	Access: http://localhost:8761
+	it shows MICROSERVICE-1 registered with eureka server
+
+3) Create another project named microservice-2 and package name com.microservice2
+ Add dependency: Eureka Discovery Client, Spring Web and SpringBoot Dev Tools
+
+  Add @EnableDiscoveryClient in main class (ServiceRegistryApplication) and import it.             
+  
+  Configure application.properties with port number where you want to run your microservice:                        
+         server.port=8082   //run this microservice on port 8082
+
+  right click on your project microservice-2 and run as springboot app
+	Access: http://localhost:8761
+	it shows MICROSERVICE-2 registered with eureka server
+============================================================================================================================
+Day 2 01
+============================================================================================================================
+1) Create Eureka Server / Service Registry:-
+###################################################
+
+a) Create a Spring Boot project named service-registry with package name com.serviceregistry
+ Add dependency: Eureka Server and SpringBoot Dev Tools
+
+b) Add @EnableEurekaServer in main class (ServiceRegistryApplication) and import it.
+
+c) Add in application.properties file:                 
+         server.port=8761 			    //to run eureka Server on port 8761                                   
+         eureka.client.register-with-eureka=false  //we are telling that donot register eureka server itself as a client.            
+         eureka.client.fetch-registry=false 	  //when i try to get client details i donot want my eureka server 
+						 //to treat this as client & even try to make an attempt to fetch the details.
+Note: 
+This tells the Eureka Server:
+Don't register itself as a client.
+Don't try to fetch registry data (because it's the registry).                
+--------------------------------------------------------------
+|      | Run Eureka Server                                    
+|      | Access: http://localhost:8761   go to browser and hit http://localhost:8080 
+					 it shows all microservices registered with eureka server.                     
+==============================================================
+By running eureka server on port 8761 all your microservices will automatically registered with eureka server without doing anything.
+
+###################################################
+2) Create Admin Server:-
+###################################################
+	Create a SpringBoot project with name admin-server and package name com.adminserver
+	Add Dependency: codecentric Springboot Admin (server) and Spring Web
+	
+Enable Admin Server by adding @EnableAdminServer annotation to your main class:
+
+if we donot give port number it runs on port 8080
+run your project
+
+###################################################
+3) Install Zipkin Server:-
+###################################################
+Step to Install Zipikin Server:
+
+1. Download Zipkin Servers: https://zipkin.io/pages/quickstart
+2. To run jar file : java -jar file-name
+3. Access that on port on 9411 http://localhost:9411/zipkin/
+
+###################################################
+4) Creating First project 
+###################################################
+Create another project named microservice-1 and package name com.microservice1
+ Add dependency: Eureka Discovery Client, codecentric Springboot Admin (server),Zipkin, Spring Boot Actuator, Spring Web and SpringBoot Dev Tools
+
+Step 1: Configure application.properties file and after convert to yaml file.
+
+server.port=8081
+# Eureka - Optional if you are running eureka on port 8671
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka
+
+# Admin Server
+spring.boot.admin.client.url=http://localhost:8080
+management.endpoints.web.exposure.include=*  // it means all endpoints information go to server first
+
+Step 2: create a new class FirstController inside package com.microservice1 and annotate this class with @RestController
+
+package com.microservice1;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class FirstController {
+
+	@GetMapping("/message")
+	public String getMessage() {
+		return "From Microservices-1";
+	}
+}
+
+Step 3: when i start this application it will automatically registered in all three places eureka server, zipkin server, Admin server
+	go to eureka server get service url:  DESKTOP-name:microservice-1:8081 click on this link and after 8081 use /message
+	i.e. http://desktop-name:8081/message
+you will see message as From Microservices-1
+
+Note: now i am able to access the application with url that eureka server has given us but,
+ we will not use that way we have feign client which will make our dependency much lesser.
+we will access the application using application name it is registered in eureka server.
+
+###################################################
+5) Checking Spring Boot Admin
+###################################################
+Go to springboot Admin refresh it go to Journal option ENDPOINTS_DETECTED and more option here check them.
+Go to wallboard option, go to metrics option select what you want to check say disk.free in metrics select path of metrics and click Add Metric. 
+you get details about it select value it shows 213GB.
+
+###################################################
+6) Feign Client
+###################################################
+Suppose we have microservice1 and microservice2 now microservice1 has to establish a communication with microservice2 so for communication we use
+ Feign Client or Rest Template or it can be a Web Client so that microservice2 communicate and take the data from microservice1.
+Health of both microservice is monitored by Spring Admin Server which is using Spring accuator, for knowing how much time taken go to
+ Zipkin and check start time and duration of time to start application, it gives me latency details. 
+if any api is taking time to respond we check in Zipkin
+
+Feign Client has auto confiration for load balancers, auto confiration for accessing the application with the name registered in eureka server
+ while other two clients also have load balancers concept and also access the microservice application with the name registered in eureka server
+ but for that we need to write boiler plate code i.e unnecessary code
+
+
+Difference Between Rest Template, Webclient & Feign client
+##############################################################
+
+Feature                         | RestTemplate (with setup)  | WebClient (with setup)  | Feign Client (automatic)
+------------------------------- | -------------------------- | ----------------------- | --------------------------
+Can use microservice name       | Yes                        | Yes                     | Yes
+Requires manual configuration   | Yes (@LoadBalanced)        | Yes (@LoadBalanced)     | No
+Built-in load balancing         | Yes                        | Yes                     | Yes
+URL hardcoded by default        | Yes                        | Yes                     | No
+Effort level                    | Medium                     | Medium                  | Low
+--------------------------------------------------------------------------------------------------------------------
+
+Example:
+Tool            | Call Example                                                                     
+--------------- | --------------------------------------------------------------------------------
+RestTemplate    | restTemplate.getForObject("http://MICROSERVICES-1/api/data", String.class);   
+  
+WebClient       | webClient.get().uri("http://MICROSERVICES-1/api/data").retrieve().bodyToMono(); 
+
+Feign Client    | @FeignClient(name = "MICROSERVICES-1") 
+                  public interface Client { 
+                  @GetMapping("/api/data") String getData(); 
+                  }
+
+============================================================================================================================
+Day 3 05
+============================================================================================================================
+###################################################################################################
+Create Second Project microservice2 - Use Inter microservices communication --> Use Feign Client
+###################################################################################################
+
+Step 1: Create Spring boot project name: microservice-2 and package name: com.microservice2
+Step 2: Add Following Dependencies
+
+==================================================================================================================
+| Dependency Name              | Maven Artifact ID                          | Purpose                             |
+==================================================================================================================
+| Eureka Discovery Client      | spring-cloud-starter-netflix-eureka-client  | Registers service in Eureka         
+| Codecentric's Spring Boot Admin Client | spring-boot-admin-starter-client  | Sends monitoring data to Admin UI   
+| Spring Web                   | spring-boot-starter-web                     | Enables REST API support            
+| Spring Boot DevTools         | spring-boot-devtools                        | Enables auto-restart and live reload     
+| Spring Boot Actuator         | spring-boot-starter-actuator                | Exposes health/metrics endpoints         
+| Zipkin                       | spring-cloud-starter-zipkin                 | Sends tracing data to Zipkin             
+| OpenFeign(Client)            | org.springframework.cloud                   | Performs Communication with other microservice
+==================================================================================================================
+
+Step 3: Create Fiegn Interface
+	go to your project microservice-2 right click on main package and create an interface with name Client
+and add annotation  @FeignClient(name = "MICROSERVICES-1") and import it
+--------------------
+Client.java
+--------------------
+package com.microservice2;
+
+import org.springframework.cloud.openfeign.FeignClient;
+
+@FeignClient(name = "MICROSERVICES-1")
+public interface Client {
+
+}
+ 
+Build one abstract method with same method return type that matches with FirstController class 
+--------------------
+Client.java
+--------------------
+package com.microservice2;
+
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
+
+@FeignClient(name = "MICROSERVICES-1")
+public interface Client {
+	
+	@GetMapping("/message")   //same as FirstController code
+	public String getData();  //same return type String in both places here and FirstController class
+//when i call getData() method this will intern make a call to our microservices1 using this GetMapping
+}
+
+Step 4: Create one Class named as SecondController under main package com.microservice2
+----------------------
+SecondController.java
+----------------------
+package com.microservice2;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class SecondController {
+	
+	@Autowired               
+	private Client client;   //doing dependency injection for feign client.
+	
+	@GetMapping("/fromsecondcontroller") //url via Getmapping
+	public String getMessageFromMicroservices1() {
+		return client.getData();
+	}
+
+}
+
+Note: 		<groupId>org.springframework.cloud</groupId>
+		<artifactId>spring-cloud-starter-openfeign</artifactId>
+it is coming from spring cloud. spring cloud is a concept in springframework which gives us 
+feign client, eureka server, admin server etc. all these dependencies.
+--------------------------------------------------------------------------------------------------------------
+
+Step 5: Add the following to yaml file:
+
+spring:
+  application:
+    name: microservices-3
+  boot:
+    admin:
+      client:
+        url: http://localhost:8080
+
+server:
+  port: 8085
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+
+after you run your microservice-2 you will see an error as 
+consider defing a bean of type com.microservice2.Client because packaging structure is not been used 
+
+
+Step 6: SpringBoot are not able to locate where these classes are created because in base package 
+by default it mainly scans Main class i.e Microservice2Application
+and we kept all classes in main package which is not good.
+
+for this we use an annotation @EnableFeignClients(basePackages = "com.microservices2") and give main package name
+-------------------------------
+Microservice2Application.java
+-------------------------------
+package com.microservice2;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.openfeign.EnableFeignClients;
+
+@SpringBootApplication
+@EnableFeignClients(basePackages = "com.microservice2")
+public class Microservice2Application {
+
+	public static void main(String[] args) {
+		SpringApplication.run(Microservice2Application.class, args);
+	}
+
+}
+
+Now run your project it runs fine and gets registered in eureka server, Admin server, zipkin server.
+
+Step 7: Test using this url: http://localhost:8085/fromsecondcontroller	 it shows message as From Microservices-1
+
+Step 8: Theory part in lecture:
+#################################################
+Load Balancer Demonstration in microservices
+#################################################
+
+In microservice 1 remove port number and start the application on different port using Spring-->
+ run configurations--->arguments---> -Dserver.port=8082 etc
+
+# Basic Info
+spring.application.name=my-service
+#server.port=8081-------> remove this
+
+# Eureka - Optional if you are running eureka on port 8671
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka
+
+# Admin Server
+spring.boot.admin.client.url=http://localhost:8080
+management.endpoints.web.exposure.include=*
+
+# Zipkin - Optional to mention. It will register with ZIPKIN Automatically
+spring.zipkin.base-url=http://localhost:9411
+spring.sleuth.sampler.probability=1.0
+
+
+In Spring Cloud, Feign Client integrates with Ribbon to provide client-side load balancing.
+ Here’s an explanation of how Feign and Ribbon work together. This is auto configured. No extra configuration is required
+
+============================================================================================================================
+Day 4 06
+============================================================================================================================
+1) Why we use Admin Server?
+All your applications which has spring actuator which generates metrics, health information about cpu usages,
+ memory utilization, all of microservices information in one place we can see that using Admin server.	
+
+2) Why Zipkin server is required?
+it is mainly used to understand the latency, one Api when i send a request 
+how much time it takes to get the response this calculation zipkin will tells. 
+
+3) why we need Clients like FeignClient?
+inter microservices communication to take place based on the names we will require clients like FeignClient etc.
+
+Theory part:
+
+########################
+Why API gateway?
+##################
+1. Simplified Client Communication: Clients (mobile apps, web apps) only need to interact 
+with one API endpoint (the API Gateway) rather than multiple microservices.
+
+2. Decoupling: It decouples the client from the internal workings of the microservices.
+ The client doesn't need to know how the services are structured or how they communicate internally.
+
+3. Centralized Management: It centralizes concerns like security, authentication, and logging
+ 	
+Notre: if you use this remove this befor closing project
+ In microservice 1 remove port number and start the application on different port using Spring-->
+ run configurations--->arguments---> -Dserver.port=8082 etc
+
+==================================================================
+How to implement API gateway:
+==================================================================
+Step 1: crete a project name it as api-gateway with com.apigateway
+
+Step 2: Add dependencies 
+SpringBoot Dev Tools
+Eureka Discovery Client
+Reactive Gateway
+
+Step 3: Mention routing in yaml file
+--------------------------------------------
+convert application.properties file to application.yml file and write codes as:
+
+server:
+  port: 5555
+  
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      routes:
+        - id: microservice-api-1
+          uri: lb://MICROSERVICE-1
+          predicates:
+            - Path=/micro1/**
+          filters:
+            - RewritePath=/micro1/(?<segment>.*), /${segment}
+        
+        - id: microservice-api-2	 #this id should be unique
+          uri: lb://MICROSERVICE-2   #this is your microservice name here lb stands for load balancer
+          predicates:
+            - Path=/micro2/**        #this is user defined we can write anything instead of micro2
+          filters:
+            - RewritePath=/micro2/(?<segment>.*), /${segment}
+
+To add more microservice add -id: to last line and give your microservice name
+
+
+Step 4: Register with eureka server use @EnableDiscoveryClient
+----------------------------------------------------------------------
+package com.microservice2;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+
+@SpringBootApplication
+@EnableDiscoveryClient
+public class ApiGatewayApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(ApiGatewayApplication.class, args);
+	}
+
+}
+
+Step 5: Run your project it runs on port 5555 
+	Perform testing:
+		http://localhost:5555/micro2/fromsecondcontroller
+		http://localhost:5555/micro1/message
+====================================================================================================================================
+
+################################################
+✅ What is a Spring Cloud Config Server?
+################################################
+
+Spring Cloud Config Server is a central configuration management server that allows you to store, manage, and serve external configurations for all your microservices from a single location — typically from a Git repository or file system.
+
+🔧 Why is it needed?
+------------------------------------
+-> In a microservices architecture:
+-> Each service may have different configuration (ports, DB URLs, API keys).
+-> You may want to change config without redeploying the service.
+-> Managing configs across dozens of services becomes a nightmare.
+
+💡 Key Features:
+----------------------------------------
+Feature				Description
+Centralized config	All services fetch config from one place
+
+###########################################
+How to secure microservice prject?
+##############################################
+Step 1: Create AuthService with Spring Security & JWT Token
+Step 2: When you login it should generate JWT Token
+Step 3: Verify the Token in API Gateway using JwtAuthenticationFilter implements GlobalFilter class
+Step 4:  Inside Filter method verify the token
