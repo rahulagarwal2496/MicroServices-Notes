@@ -1,0 +1,521 @@
+#############################################
+Day 7: 08 Authentication
+##############################################
+Registering User and do Authentication for this we use authservice project 
+go to MessageController.java class and rename it to AuthController.java
+in this we are going to write logic to take user data and return back the response
+
+-----------------------------------
+Step 1: update AuthController.java
+-----------------------------------
+package com.authservice.controller;
+
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/v1/auth")
+public class AuthController {	
+	
+}
+//removed welcome and hello methods
+
+Step 2: create several packages like  
+	com.authservice.entity
+	com.authservice.service
+	com.authservice.repository
+	com.authservice.dto
+
+Step 3: Create User Registration Implementation
+-----------------------------------------------------
+Create Entity Class with Name User.java
+-----------------------------------------------------
+Go to com.authservice.entity and create an entity class as User.java
+
+package com.authservice.entity;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name="user")
+public class User {
+	
+	@Id
+	@GeneratedValue(strategy = GenerationType.IDENTITY)
+	private long id;
+	
+	@Column(name="name", nullable = false)
+	private String name;
+	
+	@Column(name="username", nullable = false, unique = true)
+	private String username;
+	
+	@Column(name="email", nullable = false, unique = true)
+	private String email;
+	
+	@Column(name = "password")
+	private String password;
+
+	public long getId() {
+		return id;
+	}
+
+	public void setId(long id) {
+		this.id = id;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public void setName(String name) {
+		this.name = name;
+	}
+
+	public String getUsername() {
+		return username;
+	}
+
+	public void setUsername(String username) {
+		this.username = username;
+	}
+
+	public String getEmail() {
+		return email;
+	}
+
+	public void setEmail(String email) {
+		this.email = email;
+	}
+
+	public String getPassword() {
+		return password;
+	}
+
+	public void setPassword(String password) {
+		this.password = password;
+	}
+	
+}
+
+------------------------------------------------------------------------------------------------------------------
+Step 4: Create UserDto.java
+------------------------------------------------------------------------------------------------------------------
+package com.authservice.dto;
+
+public class UserDto {
+	
+	private long id;
+	private String name;
+	private String username;
+	private String email;
+	private String password;
+
+	public long getId() {
+		return id;
+	}
+
+	public void setId(long id) {
+		this.id = id;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public void setName(String name) {
+		this.name = name;
+	}
+
+	public String getUsername() {
+		return username;
+	}
+
+	public void setUsername(String username) {
+		this.username = username;
+	}
+
+	public String getEmail() {
+		return email;
+	}
+
+	public void setEmail(String email) {
+		this.email = email;
+	}
+
+	public String getPassword() {
+		return password;
+	}
+
+	public void setPassword(String password) {
+		this.password = password;
+	}
+
+}
+
+------------------------------------------------------
+Step 5: Create Repository - UserRepository.java
+----------------------------------------------------------
+ppackage com.authservice.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import com.authservice.entity.User;
+
+public interface UserRepository extends JpaRepository<User, Long>{
+	
+	User findByUsername(String username);
+	User findByEmail(String email);
+	boolean existsByUsername(String username); //existsBy checks the username and if exists gives boolean value
+	boolean existsByEmail(String email); //existsBy checks the email and if exists gives boolean value	
+}
+
+
+Step 6: the response given by API to Angular team or front end team should in a structured format.
+API Response should be in an standard format
+
+Create APIResponse class to send common response for API response, which will make front end integration common 
+------------------------------------------------------
+APIResponse.java
+----------------------------------------------------------
+In this we structure this class with the content that you want to send everytime you call an API
+
+package com.authservice.dto;
+
+public class APIResponse<T> {
+	//whenever from postman i call controller rest controller will always send data back 
+	//as an APIResponse which will make my response as consistent for angular team
+	//to consume the data with consistency. 
+	
+	private String message;
+	
+	private int status;
+	
+	private T data;
+	
+	public String getMessage() {
+		return message;
+	}
+	public void setMessage(String message) {
+		this.message = message;
+	}
+	public int getStatus() {
+		return status;
+	}
+	public void setStatus(int status) {
+		this.status = status;
+	}
+	public T getData() {
+		return data;
+	}
+	public void setData(T data) {
+		this.data = data;
+	}
+	
+	
+}
+
+Step 7: create an AuthService class in Service layer
+------------------------------------------------------
+AuthService.java Implement Logic for creating user
+------------------------------------------------------
+package com.authservice.service;
+
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+import com.authservice.dto.APIResponse;
+import com.authservice.dto.UserDto;
+import com.authservice.entity.User;
+import com.authservice.repository.UserRepository;
+
+@Service
+public class AuthService {
+	 
+	@Autowired
+	 private UserRepository userRepository;
+	
+	@Autowired
+	private PasswordEncoder passwordEncoder;
+	//when i run this it gives error creating a bean, SpringIOC will not able to create a bean.
+	//when there are third party libraries that we are using it spring IOC doesnot have information
+	//which object to create so we have to tell our springIOC that whenever a PasswordEncoder is used
+	//if this reference variable is used you have to create bean of the type BCryptPasswordEncoder.
+	//for this go to config class AppSecurityConfig.java and add 
+	//@Bean
+	//public PasswordEncoder getEncodedPassword() {
+	//	return new BCryptPasswordEncoder();
+	//  }
+	
+	
+	public APIResponse<String> register(UserDto userDto){
+		
+		APIResponse<String> response = new APIResponse<>();  //Creating API Response object
+		
+//Directly we cannot register user for this few things needs to perform:
+		
+	//Check whether username exists
+		if(userRepository.existsByUsername(userDto.getUsername())) {
+			response.setMessage("Registration Failed");
+			response.setStatus(500);
+			response.setData("User with user name already exists");
+			return response;
+		}
+		
+	//check whether Email exists
+		if(userRepository.existsByEmail(userDto.getEmail())) {
+			response.setMessage("Registration Failed");
+			response.setStatus(500);
+			response.setData("User with Email Id already exists");
+			return response;
+		}
+		
+	//Encode the password before saving that to the database
+		//To encode password we need to generate new Encrypt Bean through Dependency Injection
+		
+		String encryptedPassword = passwordEncoder.encode(userDto.getPassword()); 
+		//getting raw password using userDto.getPassword() and encode it.
+		
+		//Taking DTO content and copy that to user Entity for this Spring provides a class called
+		//BeanUtils and use copyProperties() method as BeanUtils.copyProperties()
+		User user=new User(); //Copying data of User entity to user
+		BeanUtils.copyProperties(userDto, user);  //All entity content go to user but password now is raw password.
+		
+		user.setPassword(encryptedPassword); //Encrypting password
+		User savedUser = userRepository.save(user);
+		
+		//If something went wrong throw an exception
+		if(savedUser==null) {
+			//Custom Exception
+		}
+		
+		
+	//finally save the user and return response as APIResponse	
+		response.setMessage("Registration Completed");
+		response.setStatus(201);
+		response.setData("User has been registered");
+		return response;
+	
+	}
+
+}
+
+Step 8: Add this code in AppSecurityConfig class
+----------------------------------------------------
+	@Bean
+	public PasswordEncoder getEncodedPassword() {
+		return new BCryptPasswordEncoder();
+	  }
+------------------------------------------------------
+Updated AppSecurityConfig.java class
+------------------------------------------------------
+package com.authservice.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+@EnableWebSecurity
+public class AppSecurityConfig {
+	
+	@Bean
+	public PasswordEncoder getEncodedPassword() {
+		return new BCryptPasswordEncoder();
+	} //it creates an object of BCryptPasswordEncoder and give it to Spring IOC.
+
+	
+	//In this we need to Configure how to keep
+	//1. which url open 
+	//2. which url to authenticate
+	//3. which URL To do Authorization
+	@Bean 	//it will create an object of http and give it to IOC
+	public SecurityFilterChain securityConfig(HttpSecurity http) throws Exception{
+		//whatever input coming from this http.authorizeHttpRequests simply goto req
+		//http.authorizeHttpRequests(
+		//		req->{		//we are using lambdas expression here req-> 
+		//in latest version of springframework we have to use like this otherwise it will not work
+		//			req.anyRequest().permitAll(); //allows all urls coming to req
+		//		}
+		//		);
+		//return http.build();  //to finish object and apply return on it
+		
+		//the incoming url if is this "http://localhost:8080/api/v1/auth/welcome" permit all 
+		//any request apart from that authenticated.
+		http.authorizeHttpRequests(
+				req->{
+					req.requestMatchers("/api/v1/auth/welcome").permitAll()
+					.anyRequest().authenticated();
+				}
+				);
+		return http.build();
+	}
+}
+
+Step 9: Go to AuthController and write codes as:
+------------------------------------------------------
+Updated AuthController.java class
+------------------------------------------------------
+package com.authservice.controller;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.authservice.dto.APIResponse;
+import com.authservice.dto.UserDto;
+import com.authservice.service.AuthService;
+
+@RestController
+@RequestMapping("/api/v1/auth")
+public class AuthController {
+	
+	@Autowired
+	private AuthService authService; //injecting bean and use this authService below coding part
+	
+	@PostMapping("/register")
+	public ResponseEntity<APIResponse<String>> register(@RequestBody UserDto dto){
+		APIResponse<String> response = authService.register(dto);
+		return new ResponseEntity<>(response, HttpStatusCode.valueOf(response.getStatus()));
+	}
+	
+}
+
+------------------------------------------------------------------
+Step 10: Add Swagger Dependency in authservice project
+------------------------------------------------------------------
+     <dependency>
+    	<groupId>org.springdoc</groupId>
+    	<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+    	<version>2.5.0</version>
+     </dependency>
+
+To Access Swagger - Run the Project
+
+http://localhost:8080/swagger-ui.html
+
+Or (sometimes):
+
+http://localhost:8080/swagger-ui/index.html
+
+but now it says: Access to localhost was denied
+		 You don't have authorization to view this page.
+		 HTTP ERROR 403
+By Default swagger is now not comes as open URL it has become a secured URL 
+right now only Open URL is welcome which doesnot exixts so replace it with register.
+
+--------------------------------------------
+Step 11: we need to open Urls  
+--------------------------------------------
+	Go to AppSecurityConfig and keep certain URLs open:
+	        for this create an array and paste all urls inside that  
+
+	private String[] openUrl= {
+		"/api/v1/auth/register/", 
+    		"/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/swagger-resources/**",
+            "/webjars/**"
+       };
+
+This is swagger URL:
+"/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/swagger-resources/**",
+            "/webjars/**"
+
+and use openUrl in place of req.requestMatchers(openUrl).permitAll()
+ 
+Also Add: http.csrf(csrf -> csrf.disable()) to disable CSRF
+
+------------------------------------------------------
+Updated AppSecurityConfig.java class
+------------------------------------------------------
+package com.authservice.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+@EnableWebSecurity
+public class AppSecurityConfig {
+	
+	private String[] openUrl= {
+			"/api/v1/auth/register", 
+    		"/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/swagger-resources/**",
+            "/webjars/**"
+       };  	//Created an String Array to keep Urls open
+	
+	@Bean
+	public PasswordEncoder getEncodedPassword() {
+		return new BCryptPasswordEncoder();
+	} //it creates an object of BCryptPasswordEncoder and give it to Spring IOC.
+
+	
+	//In this we need to Configure how to keep
+	//1. which url open 
+	//2. which url to authenticate
+	//3. which URL To do Authorization
+	@Bean 	//it will create an object of http and give it to IOC
+	public SecurityFilterChain securityConfig(HttpSecurity http) throws Exception{
+		//whatever input coming from this http.authorizeHttpRequests simply goto req
+		//http.authorizeHttpRequests(
+		//		req->{		//we are using lambdas expression here req-> 
+		//in latest version of springframework we have to use like this otherwise it will not work
+		//			req.anyRequest().permitAll(); //allows all urls coming to req
+		//		}
+		//		);
+		//return http.build();  //to finish object and apply return on it
+		
+		//the incoming url if is this "http://localhost:8080/api/v1/auth/welcome" permit all 
+		//any request apart from that authenticated.
+		http.csrf(csrf -> csrf.disable())  //Disable CSRF
+		.authorizeHttpRequests(
+				req->{
+					req.requestMatchers(openUrl).permitAll()
+					.anyRequest().authenticated();
+				}
+				);
+		return http.build();
+	}
+}
+
+Step 12: Add this line in application.properties file
+		spring.jpa.hibernate.ddl-auto=update
+
+------------------------------------------------------
+Updated application.properties
+------------------------------------------------------
+spring.application.name=authservice
+
+spring.datasource.url=jdbc:mysql://localhost:3306/authservicedb
+spring.datasource.username=root
+spring.datasource.password=root
+
+spring.jpa.hibernate.ddl-auto=update
+
+----------------------------------------------------------------------------
+Step 13: Run your project and test using swagger 
+----------------------------------------------------------------------------
+		http://localhost:8080/swagger-ui.html
+Or (sometimes):
+	http://localhost:8080/swagger-ui/index.html

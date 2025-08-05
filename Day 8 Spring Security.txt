@@ -1,0 +1,387 @@
+#############################################
+Day 8: 12 Implementing Login Module
+##############################################
+
+Step 1: Creating LoginDto so that when data is submitted from postman username and password goes to LoginDto 
+-----------------------------
+LoginDto.java
+-----------------------------
+public class LoginDto {
+	
+	private String username;
+	private String password;
+	
+	public String getUsername() {
+		return username;
+	}
+	public void setUsername(String username) {
+		this.username = username;
+	}
+	public String getPassword() {
+		return password;
+	}
+	public void setPassword(String password) {
+		this.password = password;
+	}
+
+}
+
+--------------------------------------------------------------
+Step 2: Add these code in AuthController
+--------------------------------------------------------------
+
+@Autowired  //it gives error creating a bean so add this AuthenticationManager in config file.
+	private AuthenticationManager authManager;
+
+
+@PostMapping("/login")
+	public ResponseEntity<APIResponse<String>> login(@RequestBody LoginDto dto){
+		
+		return null;
+	}
+------------------------------------------------------------------
+Step 3: Add these code in AppSecurityconfig 
+------------------------------------------------------------------
+@Bean
+	public AuthenticationManager authManager(AuthenticationConfiguration config) throws Exception {
+		return config.getAuthenticationManager();
+	}
+
+--------------------------------------
+Step 4: Add these code in AuthController
+--------------------------------------
+@PostMapping("/login")
+	public ResponseEntity<APIResponse<String>> login(@RequestBody LoginDto dto){ //this dto has
+				                          //username and password that user entered
+		
+//You can't directly give username and password to AuthenticationManager for this apply this line
+		UsernamePasswordAuthenticationToken token = 
+				new UsernamePasswordAuthenticationToken(dto.getUsername(),dto.getPassword());
+		
+		authManager.authenticate(token);
+		//this token which means username and password has to given to DAOAuthenticationProvider
+		
+		return null;
+	}
+
+---------------------------------------------
+Step 5: Add these code in AppSecurityconfig 
+---------------------------------------------
+     @Bean
+	public AuthenticationProvider authProvider() {
+
+		DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+		return null;
+	}
+
+----------------------------------------------------------------------------------------------------------------------
+Step 6: Create a new class name as CustomUserDetailsService annotate with @Servuce and implements UserDetailsService and add unimplemented methods
+---------------------------------
+CustomUserDetailsService.java
+---------------------------------
+package com.authservice.service;
+
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+
+@Service
+public class CustomUserDetailsService implements UserDetailsService {
+
+	@Override
+	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+}
+
+##############################################
+CustomUserDetailsService.java
+##############################################
+package com.authservice.service;
+
+import java.util.Collections;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+
+import com.authservice.entity.User;
+import com.authservice.repository.UserRepository;
+
+@Service
+public class CustomUserDetailsService implements UserDetailsService {
+	
+	@Autowired
+	private UserRepository userRepository;
+	
+	@Override
+	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+		User user = userRepository.findByUsername(username);
+		
+		return new org.springframework.security.core.userdetails.User
+				(user.getUsername(),user.getPassword(),Collections.emptyList());
+		//import User as this is built-in User 
+	}
+
+}
+
+
+----------------------------------------------------------------------------------------------------------
+Step 7: What we are doing ?
+-> I am developing CustomUserDetailsService class implements UserDetailsService it has an abstract method loadUserByUsername 
+i am implementing that method what that method does it takes the username based on that username it goes to database searches
+ the user after searching the user if user is found we will set that user further to a object of springframework.security.core.userdetails 
+called User to this User i am giving username password and role of user is kept empty now.
+this is my actual data coming from database and needs to be verified 
+
+--------------------------------------
+Step 8: Add this in AppSecurityConfig class
+--------------------------------------
+@Autowired
+	private CustomUserDetailsService customUserDetailsService;
+
+//this layer will compare expected value with actual value
+@Bean
+	public AuthenticationProvider authProvider() {
+
+		DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+		
+		authProvider.setUserDetailsService(customUserDetailsService);
+		//now DaoAuthenticationProvider is able to supply the username to it
+		authProvider.setPasswordEncoder(getEncodedPassword()); //since password is encoded so decrypting password
+		return authProvider;
+	}
+
+##############################################
+Step 9: update AuthController.java
+##############################################
+package com.authservice.controller;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.authservice.dto.APIResponse;
+import com.authservice.dto.LoginDto;
+import com.authservice.dto.UserDto;
+import com.authservice.service.AuthService;
+
+@RestController
+@RequestMapping("/api/v1/auth")
+public class AuthController {
+	
+	@Autowired  //it gives error creating a bean so add this AuthenticationManager in config file.
+	private AuthenticationManager authManager;
+	
+	@Autowired
+	private AuthService authService; //injecting bean and use this authService below coding part
+	
+	@PostMapping("/register")
+	public ResponseEntity<APIResponse<String>> register(@RequestBody UserDto dto){
+		APIResponse<String> response = authService.register(dto);
+		return new ResponseEntity<>(response, HttpStatusCode.valueOf(response.getStatus()));
+	}
+	
+	@PostMapping("/login")
+	public ResponseEntity<APIResponse<String>> login(@RequestBody LoginDto dto){ //this dto has
+														//username and password that user entered
+		APIResponse<String> response = new APIResponse<>(); 
+//You can't directly give username and password to AuthenticationManager for this apply this line
+		UsernamePasswordAuthenticationToken token = 
+				new UsernamePasswordAuthenticationToken(dto.getUsername(),dto.getPassword());
+		
+		try {
+			 Authentication authenticate = authManager.authenticate(token);
+			 
+			 if(authenticate.isAuthenticated()) {
+				 response.setMessage("Login Sucessful");
+				 response.setStatus(200);
+				 response.setData("User has logged");
+				 return new ResponseEntity<>(response, HttpStatusCode.valueOf(response.getStatus()));
+			 }
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
+		 response.setMessage("Failed");
+		 response.setStatus(401);
+		 response.setData("Un-Authorized Access");
+		 return new ResponseEntity<>(response, HttpStatusCode.valueOf(response.getStatus()));
+	 }
+		
+}
+
+##############################################
+AppSecurityConfig.java class code
+##############################################
+package com.authservice.config;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+import com.authservice.service.CustomUserDetailsService;
+
+@Configuration
+@EnableWebSecurity
+public class AppSecurityConfig {
+	
+	@Autowired
+	private CustomUserDetailsService customUserDetailsService;
+	
+	private String[] openUrl= {
+			"/api/v1/auth/register", 
+    		"/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/swagger-resources/**",
+            "/webjars/**"
+       };  	//Created an String Array to keep Urls open
+	
+	@Bean
+	public PasswordEncoder getEncodedPassword() {
+		return new BCryptPasswordEncoder();
+	} //it creates an object of BCryptPasswordEncoder and give it to Spring IOC.
+
+	@Bean
+	public AuthenticationManager authManager(AuthenticationConfiguration config) throws Exception {
+		return config.getAuthenticationManager();
+	}
+	
+	@Bean
+	public AuthenticationProvider authProvider() {
+
+		DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+		
+		authProvider.setUserDetailsService(customUserDetailsService);
+		//now DaoAuthenticationProvider is able to supply the username to it
+		authProvider.setPasswordEncoder(getEncodedPassword()); //since password is encoded so decrypting password
+		return authProvider;
+	}
+	
+	//In this we need to Configure how to keep
+	//1. which url open 
+	//2. which url to authenticate
+	//3. which URL To do Authorization
+	@Bean 	//it will create an object of http and give it to IOC
+	public SecurityFilterChain securityConfig(HttpSecurity http) throws Exception{
+		//whatever input coming from this http.authorizeHttpRequests simply goto req
+		//http.authorizeHttpRequests(
+		//		req->{		//we are using lambdas expression here req-> 
+		//in latest version of springframework we have to use like this otherwise it will not work
+		//			req.anyRequest().permitAll(); //allows all urls coming to req
+		//		}
+		//		);
+		//return http.build();  //to finish object and apply return on it
+		
+		//the incoming url if is this "http://localhost:8080/api/v1/auth/welcome" permit all 
+		//any request apart from that authenticated.
+		http.csrf(csrf -> csrf.disable())  //Disable CSRF
+		.authorizeHttpRequests(
+				req->{
+					req.requestMatchers(openUrl).permitAll()
+					.anyRequest().authenticated();
+				}
+				);
+		return http.build();
+	}
+}
+
+----------------------------------------------------------------------------------------------------------------------------
+Step 10: now we need to test our code so build one dummy method for testing
+	create a class in controller name as WelcomeController and annotate with @RequestMapping
+----------------------
+WelcomeController.java
+----------------------
+package com.authservice.controller;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/v1/welcome")
+public class WelcomeController {
+
+	@GetMapping("/message")
+	public String welcome() {
+		return "welcome";
+	}
+}
+
+----------------------------------------------------------------------------------------------------------------------
+Step 11: Run your project and test using postman http://localhost:8080/api/v1/auth/login
+	since this URL is not open so we need to open this URL for this Add this line "/api/v1/auth/login" here
+	
+	private String[] openUrl= {
+			"/api/v1/auth/register",
+			"/api/v1/auth/login",
+    		"/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/swagger-resources/**",
+            "/webjars/**"
+       };
+----------------------------------------------------------------------------------------------------------
+
+Step 12: Now run your project and test in postman via get  http://localhost:8080/api/v1/auth/login
+{
+    "username":"mike",
+    "password":"testing"
+}
+---------------------------------------
+
+Step 13: Now test welcome page  using Get  http://localhost:8080/api/v1/welcome/message
+	select  Auth---> Basic Auth---> and give username and password 
+
+it donot work as httpBasic is not enabled so use this line of code:
+								.httpBasic()
+-------------------------------------
+Update AppSecurityConfig class
+-------------------------------------
+http.csrf(csrf -> csrf.disable())  //Disable CSRF
+		.authorizeHttpRequests(
+				req->
+					req.requestMatchers(openUrl).permitAll()
+					.anyRequest().authenticated()
+				).httpBasic();  //httpBasic() for doing form related testing.
+		return http.build();
+----------------------------------------------------------------------------------------------------
+
+Step 14: Now test welcome page  using Get  http://localhost:8080/api/v1/welcome/message
+	select  Auth---> Basic Auth---> and give username and password 
+it shows welcome message
+
+
+Step 15: we use JWTToken so disable this httpBasic for now:
+-----------------------------------------------------------------------------
+Update AppSecurityConfig class
+---------------------------------------
+http.csrf(csrf -> csrf.disable())  //Disable CSRF
+		.authorizeHttpRequests(
+				req->
+					req.requestMatchers(openUrl).permitAll()
+					.anyRequest().authenticated()
+				);  //httpBasic() for doing form related testing.
+		return http.build();
+ 
