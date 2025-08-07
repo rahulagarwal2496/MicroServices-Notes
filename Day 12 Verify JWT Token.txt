@@ -1,0 +1,538 @@
+####################################
+Day 12: 19 Verifying JWT Token
+####################################
+Step 1: Run your Project 
+	Go to swagger to access swagger use url: http://localhost:8080/swagger-ui/index.html#/auth-controller/login
+
+{
+  "username": "mike",
+  "password": "testing"
+}
+token is generated 
+
+STEP 2: we didnot provide multiple roles for user so to give multiple roles
+		simply add ADMIN as role name and use hasAnyRole method code is:
+========================
+update AppSecurityConfig
+========================
+		.requestMatchers("/api/v1/welcome/message").hasAnyRole("USER","ADMIN") 
+
+
+Step 3: go to WelcomeController in this /message URL is secured, which means this URL
+	 http://localhost:8080/api/v1/welcome/message      we are not able to access.
+because in AppSecurityConfig class this url you need to login as a USER or ADMIN
+ 
+Step 4: Go to postman use Get http://localhost:8080/api/v1/welcome/message
+	in Auth select No Auth click on send this gives Forbidden message
+
+Step 5: This URL http://localhost:8080/api/v1/welcome/message needs to be accessed after you login
+   	for this Go to bearer Token and paste your Token and click on send 
+	now in Authorization Token is sent. but you see 403 Forbidden message.
+
+=========
+Theory:
+=========
+		URL + Jwt Token	                         JwtFilter class
+		---------------				 ---------------
+		Header					->Fetch JWT Token from URL Header
+		Authorization:JWT Token			->Validate Token
+
+with the welcome URL i am sending this JWT Token.
+Inside this Token their is header and inside Header their is a key called as Authorization 
+and against that key token value is stored so when i click send this token goes to backend 
+and backend code should extract this token, validate this token and if valid it should send the response back.
+============================================================================================================== 
+when you are sending url with JWT Token this url will save the Token inside Header of the URL and
+ inside that Header we have Authorization:JWT Token
+when this URl makes a request to backend code, In my backend i will build a special class called JWT Filter.
+JWT Filter class from the URL it will extract the Token.
+Note: No other class can extract the Token, we have to build Filter class to extract the Token.
+only if you are building this Filter class then it is capable of extracting the Token.
+After extracting Token it validates the Token.
+
+Step 6: Develop JWTFilter Class 
+-------------------------------
+annotate class with @Component and extends OncePerRequestFilter(this is an abstract class)
+ add unimplemented method of by clicking ctrl+1 in JwtFilter.
+This OncePerRequestFilter abstract class has one incomplete method called doFilterInternal which has
+ request and response and one more parameter filterChain.
+request parameter here takes the inncoming URL request so whatever URLs i am entering 
+now those URl will go to this method request object automatically.
+
+-----------------------
+JwtFilter class
+----------------------
+package com.authservice.config;
+
+import java.io.IOException;
+
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+@Component
+public class JwtFilter extends OncePerRequestFilter {
+
+	@Override
+	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+			throws ServletException, IOException {
+		
+String authHeader = request.getHeader("Authorization"); //In this method getHeader put your key name which is going to give Token
+		System.out.println(authHeader);
+	}
+
+}
+-----------------------------------------------------------------------------------------------------------------------------
+Step 7: Run your project and check what is coming in authHeader
+	go to postman get http://localhost:8080/api/v1/welcome/message it gives 403 Forbidden
+	so for time being  go to AppSecurityConfig class and just to test this comment this line 
+
+     .requestMatchers("/api/v1/welcome/message").hasAnyRole("USER","ADMIN")
+and under the openUrl add this:  /api/v1/welcome/message
+
+-------------------------------
+Updated AppSecurityConfig class
+-------------------------------
+package com.authservice.config;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+import com.authservice.service.CustomUserDetailsService;
+
+@Configuration
+@EnableWebSecurity
+public class AppSecurityConfig {
+	
+	@Autowired
+	private CustomUserDetailsService customUserDetailsService;
+	
+	private String[] openUrl= {
+			"/api/v1/auth/register",
+			"/api/v1/auth/login",
+    		"/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/swagger-resources/**",
+            "/webjars/**",
+            "/api/v1/welcome/message"
+       };  	//Created an String Array to keep Urls open
+	
+	@Bean
+	public PasswordEncoder getEncodedPassword() {
+		return new BCryptPasswordEncoder();
+	} //it creates an object of BCryptPasswordEncoder and give it to Spring IOC.
+
+	@Bean
+	public AuthenticationManager authManager(AuthenticationConfiguration config) throws Exception {
+		return config.getAuthenticationManager();
+	}
+	
+	@Bean
+	public AuthenticationProvider authProvider() {
+
+		DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+		
+		authProvider.setUserDetailsService(customUserDetailsService);
+		//now DaoAuthenticationProvider is able to supply the username to it
+		authProvider.setPasswordEncoder(getEncodedPassword()); //since password is encoded so decrypting password
+		return authProvider;
+	}
+	
+	//In this we need to Configure how to keep
+	//1. which url open 
+	//2. which url to authenticate
+	//3. which URL To do Authorization
+	@Bean 	//it will create an object of http and give it to IOC
+	public SecurityFilterChain securityConfig(HttpSecurity http) throws Exception{
+		//whatever input coming from this http.authorizeHttpRequests simply goto req
+		//http.authorizeHttpRequests(
+		//		req->{		//we are using lambdas expression here req-> 
+		//in latest version of springframework we have to use like this otherwise it will not work
+		//			req.anyRequest().permitAll(); //allows all urls coming to req
+		//		}
+		//		);
+		//return http.build();  //to finish object and apply return on it
+		
+		//the incoming url if is this "http://localhost:8080/api/v1/auth/welcome" permit all 
+		//any request apart from that authenticated.
+		//http.csrf(csrf -> csrf.disable())  //Disable CSRF
+
+	http.csrf(csrf -> csrf.disable())  //Disable CSRF
+	.authorizeHttpRequests(
+			req->
+				req.requestMatchers(openUrl)
+				.permitAll()
+				//.requestMatchers("/api/v1/welcome/message").hasRole("USER") //only as USER you can access this
+				//to access as multiple role use hasAnyRole() method and supply all roles names into it.
+				//.requestMatchers("/api/v1/welcome/message").hasAnyRole("USER","ADMIN")
+				.anyRequest()
+				.authenticated()
+			);  //httpBasic() for doing form related testing.
+	return http.build();
+	}
+}
+---------------------------------------------------------------------------------------------------------------------------
+Step 8: Run your project and check what is coming in authHeader
+	go to postman get http://localhost:8080/api/v1/welcome/message it gives me Token starting with Bearer and one space 
+
+Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJtaWtlIiwicm9sZSI6IlJPTEVfVVNFUiIsImlhdCI6MTc1NDQ3OTEzNCwiZXhwIjox
+NzU0NTY1NTM0fQ.G3yuXPhpTX9020Igvek7lxfWmy8D51MrvnXFCun5FPc
+
+There are seven Characters before Token so we have to remove this else validation of Token will not take place.
+now we ensure Token is not null and if both condition is true then we extract Token.
+Add these codes:
+
+if (authHeader != null && authHeader.startsWith("Bearer ")) {
+	String jwt = authHeader.substring(7); //substring will skip the first seven characters i.e Bearer and one space
+			System.out.println(jwt); //it prints only Token	
+		} 
+
+-----------------
+Updated JwtFilter
+-----------------
+package com.authservice.config;
+
+import java.io.IOException;
+
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+@Component
+public class JwtFilter extends OncePerRequestFilter {
+
+	@Override
+	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+			throws ServletException, IOException {
+		
+String authHeader = request.getHeader("Authorization"); //In this method getHeader put your key name which is going to give Token
+		//System.out.println(authHeader);
+		if (authHeader != null && authHeader.startsWith("Bearer ")) {
+		String jwt = authHeader.substring(7); //substring will skip the first seven characters i.e Bearer and one space
+			System.out.println(jwt);
+		}
+	}
+
+}
+------------------------------------------------------------
+Run your project and check what is coming in authHeader
+	go to postman get http://localhost:8080/api/v1/welcome/message it gives me only Token
+
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJtaWtlIiwicm9sZSI6IlJPTEVfVVNFUiIsImlhdCI6MTc1NDQ3OTEzNCwiZXhwIjoxNzU0NTY1NTM0fQ
+.G3yuXPhpTX9020Igvek7lxfWmy8D51MrvnXFCun5FPc
+
+------------------------------------------------------------------------------
+Step 9: Add these codes in JwtService class to validate Token :
+
+	public String validateTokenAndRetrieveSubject(String token) {
+        return JWT.require(Algorithm.HMAC256(SECRET_KEY))
+            .build()
+            .verify(token)
+            .getSubject();
+    }
+
+Structure of Token:
+-> Header
+-> Payload
+-> Signature
+In order to validate The Token first you have to apply signature, signature is like secret key if you donot apply signature
+your Token decryption cannot happen.
+
+Explanation of code: 
+--------------------
+i am taking JWT Token and JWT.require(Algorithm.HMAC256(SECRET_KEY)) this line tells JWT.require takes algorithm 
+which uses HMAC256 and takes SECRET_KEY apply the Secret Key, this algorithm was use to encrypt same algorithm we will apply to decrypt.
+after decrypting verify the Token whether expiry time and other details are proper if OK then 
+.getSubject() will get only the username from the Token and we are taking Back username in Filter class
+
+=============
+JwtService
+=============
+package com.authservice.service;
+
+import java.util.Date;
+import org.springframework.stereotype.Service;
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.algorithms.Algorithm;
+
+@Service
+public class JwtService {
+
+    private static final String SECRET_KEY = "my-super-secret-key";
+    private static final long EXPIRATION_TIME = 86400000; // 1 day
+    
+    // This method generate Token
+    public String generateToken(String username, String role) {
+        return JWT.create()
+            .withSubject(username)
+            .withClaim("role", role)
+            .withIssuedAt(new Date())
+            .withExpiresAt(new Date(System.currentTimeMillis() + EXPIRATION_TIME))
+            .sign(Algorithm.HMAC256(SECRET_KEY));
+    }
+    
+    // This method validates Token
+    public String validateTokenAndRetrieveSubject(String token) {
+        return JWT.require(Algorithm.HMAC256(SECRET_KEY))
+            .build()
+            .verify(token)
+            .getSubject();
+    }
+}
+==================================================================================
+----------------------------------------------------------------------------------
+Step 10:
+	so whatever token i got here in jwt variable of JwtFilter class i will give it to service class for this go to JwtFilter class
+and add codes:
+		@Autowired	
+		private JwtService jwtService;
+
+		String username = jwtService.validateTokenAndRetrieveSubject(jwt); //whatever Token i extracted in jwt variable i am giving to 
+			//public String validateTokenAndRetrieveSubject(String token) { } of JwtService class.
+			System.out.println(username);
+--------------------------------------------------------------------------------------------------------------------
+Step 11: Run your project in postman go to postman get http://localhost:8080/api/v1/welcome/message
+	In Authorization tab select ---> Bearer Token ---> check Token is pasted or not else Paste your token Here.
+when you click send it gives username in the console as mike.
+and if the token is wrong it gives error as 403 Forbidden in postman and in console:
+com.auth0.jwt.exceptions.SignatureVerificationException: The Token's Signature resulted invalid when verified using the Algorithm: HmacSHA256
+
+------------------------------------------------
+Step 12: Now we have username we need to take this username and tell springsecurity for this username grant me permisson
+ to process this Url and give the response back.
+
+SecurityContextHolder is an area in which i will set user details successfully if the token was valid.
+if you set SecurityContextHolder only then springboot will grant you the permission to access URL.
+
+Note: During login part we develop a method UserDetailsService it takes username goes to databse gets the record
+ puts that into user object of the type userDetails
+
+Add these codes in Jwtfilter class:
+	
+	@Autowired
+	private CustomUserDetailsService UserDetailsService;
+
+
+	if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+				 var userDetails = UserDetailsService.loadUserByUsername(username);
+				 
+				 var authToken = new UsernamePasswordAuthenticationToken(
+	                        userDetails, null, userDetails.getAuthorities()); //using java 10 features here
+				 
+				 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+				//i am further taking Token and this token has username and role and to the same object i am setting up URL
+	                SecurityContextHolder.getContext().setAuthentication(authToken);
+	                //sets the token into a ContextHolder this is like taking permission from spring security. 
+			 }
+
+		we need add this line after closing bracket of first if condition :
+					 filterChain.doFilter(request, response);
+		spring security has some internal filters so use this else it will not work.
+
+================
+JwtFilter
+================
+package com.authservice.config;
+
+import java.io.IOException;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import com.authservice.service.CustomUserDetailsService;
+import com.authservice.service.JwtService;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+@Component
+public class JwtFilter extends OncePerRequestFilter {
+	
+	@Autowired	
+	private JwtService jwtService;
+	
+	@Autowired
+	private CustomUserDetailsService UserDetailsService;
+
+	@Override
+	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+			throws ServletException, IOException {
+		
+		String authHeader = request.getHeader("Authorization"); //In this method getHeader put your key name which is going to give Token
+		//System.out.println(authHeader);
+		
+		if (authHeader != null && authHeader.startsWith("Bearer ")) {
+			String jwt = authHeader.substring(7); //substring will skip the first seven characters i.e Bearer and one space
+			//System.out.println(jwt); //it prints only Token
+			
+			String username = jwtService.validateTokenAndRetrieveSubject(jwt); //whatever Token i extracted in jwt variable i am giving to 
+			//public String validateTokenAndRetrieveSubject(String token) { } of JwtService class.
+			//System.out.println(username);
+			
+			 if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+				 var userDetails = UserDetailsService.loadUserByUsername(username);
+				 
+				 var authToken = new UsernamePasswordAuthenticationToken(
+	                        userDetails, null, userDetails.getAuthorities()); //using java 10 features here
+				 
+				 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+				//i am further taking Token and this token has username and role and to the same object i am setting up URL
+	                SecurityContextHolder.getContext().setAuthentication(authToken);
+	                //sets the token into a ContextHolder this is like taking permission from spring security. 
+			 }
+		}
+		filterChain.doFilter(request, response); //this line is must 
+	}
+
+}
+============================================================================================================================================
+--------------------------------------------------------------------------------------------------------------------------------------------
+
+Step 13: go to AppSecurityConfig class and remove the comment from this line:
+
+	//.requestMatchers("/api/v1/welcome/message").hasAnyRole("USER","ADMIN")
+
+and romove "/api/v1/welcome/message" from openUrl as we made them back authenticated
+
+Also Add this line:
+			.authenticationProvider(authProvider())
+    .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class); 
+	//this tells run jwtFilter before running internal filters.
+==================
+AppSecurityConfig 
+==================	
+package com.authservice.config;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+import com.authservice.service.CustomUserDetailsService;
+
+@Configuration
+@EnableWebSecurity
+public class AppSecurityConfig {
+	
+	@Autowired
+	private CustomUserDetailsService customUserDetailsService;
+	
+	@Autowired
+	private JwtFilter jwtFilter;
+	
+	private String[] openUrl= {
+			"/api/v1/auth/register",
+			"/api/v1/auth/login",
+    		"/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/swagger-resources/**",
+            "/webjars/**"
+       };  	//Created an String Array to keep Urls open
+	
+	@Bean
+	public PasswordEncoder getEncodedPassword() {
+		return new BCryptPasswordEncoder();
+	} //it creates an object of BCryptPasswordEncoder and give it to Spring IOC.
+
+	@Bean
+	public AuthenticationManager authManager(AuthenticationConfiguration config) throws Exception {
+		return config.getAuthenticationManager();
+	}
+	
+	@Bean
+	public AuthenticationProvider authProvider() {
+
+		DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+		
+		authProvider.setUserDetailsService(customUserDetailsService);
+		//now DaoAuthenticationProvider is able to supply the username to it
+		authProvider.setPasswordEncoder(getEncodedPassword()); //since password is encoded so decrypting password
+		return authProvider;
+	}
+	
+	//In this we need to Configure how to keep
+	//1. which url open 
+	//2. which url to authenticate
+	//3. which URL To do Authorization
+	@Bean 	//it will create an object of http and give it to IOC
+	public SecurityFilterChain securityConfig(HttpSecurity http) throws Exception{
+		//whatever input coming from this http.authorizeHttpRequests simply goto req
+		//http.authorizeHttpRequests(
+		//		req->{		//we are using lambdas expression here req-> 
+		//in latest version of springframework we have to use like this otherwise it will not work
+		//			req.anyRequest().permitAll(); //allows all urls coming to req
+		//		}
+		//		);
+		//return http.build();  //to finish object and apply return on it
+		
+		//the incoming url if is this "http://localhost:8080/api/v1/auth/welcome" permit all 
+		//any request apart from that authenticated.
+		//http.csrf(csrf -> csrf.disable())  //Disable CSRF
+
+	http.csrf(csrf -> csrf.disable())  //Disable CSRF
+	.authorizeHttpRequests(
+			req->
+				req.requestMatchers(openUrl)
+				.permitAll()
+				//.requestMatchers("/api/v1/welcome/message").hasRole("USER") //only as USER you can access this
+				//to access as multiple role use hasAnyRole() method and supply all roles names into it.
+				//.requestMatchers("/api/v1/welcome/message").hasAnyRole("USER","ADMIN")
+				.requestMatchers("/api/v1/welcome/message").hasAnyRole("USER","ADMIN")
+				.anyRequest()
+				.authenticated()
+			)  //httpBasic() for doing form related testing.
+	.authenticationProvider(authProvider())
+    .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class); 
+	//this tells run jwtFilter before running internal filters.
+	
+	return http.build();
+	}
+}
+===================================================================================================================================
+-----------------------------------------------------------------------------------------------------------
+Step 14: Run your project and test your project go to swagger http://localhost:8080/swagger-ui/index.html#/auth-controller/login
+{
+  "username": "mike",
+  "password": "testing"
+} 
+get the token paste it in postman 
+
+			 get http://localhost:8080/api/v1/welcome/message click send.
+				it gives 200 OK and welcome message
+
+******************************************************************************************************************************************

@@ -1,0 +1,244 @@
+####################################
+Day 10: 15 JWT Token(JSON Web Token)
+####################################
+
+
+Important Notes:-
+############################
+Stateless: User details are not stored at the server side. Hence for every request we have to perform authention
+
+Statefull: User details are  stored at the server side. Once the use perform login, 
+Server will generate SessionId, One Copy of session will be kept at server side & another copy is given to the client,
+ so that for subsequent request we can authenticate the user by sending seesionId with the request to server.
+ When session Id matches you will get the respsone
+
+---------------------------------------------------------------------------------
+
+Advantages of JWT Token
+#########################
+-> Stateless Communication
+-> This performs Authentication of subsequent request made post login was successful
+-> Highly Secured
+-> Set Expiry time for token
+-> Securing All Microservice can be made easy with JWT Token
+
+
+Architecture of JWT Token
+###############################
+Header.PayLoad.Signature
+
+Explanation of The Architecture
+
+1) What is header?
+Answer: ALGORITHM & TOKEN TYPE
+
+Example:
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+
+
+2) What is PayLoad?
+Answer:	-> For which user token is generated (User Details)
+	-> Who has generated this token (Issuer)
+	-> Expiry Time Of Token?
+Example:
+{
+  "sub": "1234567890",
+  "name": "John Doe",
+  "iat": 1516239022
+}
+
+
+3)What is Signature?
+Answer: Secret key
+*******************************************************************************************************
+
+#################################
+Day 11: 16 Implementing JWT Token
+#################################
+
+Step 1: go online and search jwtauth0 maven and copy the dependency check groupId: com.auth0
+Download this dependency add in pom.xml file of authservice:
+--------------------------------------------------------------------------------------------
+<dependency>
+    <groupId>com.auth0</groupId>
+    <artifactId>java-jwt</artifactId>
+    <version>4.4.0</version>
+</dependency>
+--------------------------------------
+without this JWT implementation cannot be done
+
+Step 2: JWT Token donot require form based authentication because 
+	it is stateless communication so remove .httpBasic() 
+	Updated code:
+-----------------------------------------------------------------------------------------
+@Bean 	
+	public SecurityFilterChain securityConfig(HttpSecurity http) throws Exception{
+	http.csrf(csrf -> csrf.disable())  
+		.authorizeHttpRequests(
+			req->
+				req.requestMatchers(openUrl)
+				.permitAll()
+				.requestMatchers("/api/v1/welcome/message").hasRole("USER") //only as USER you can access this
+				.anyRequest()
+				.authenticated()
+			);  //httpBasic() for doing form related testing.
+	return http.build();
+	}
+------------------------------------------------------------------------------------------------------
+
+Step 3: Create a new class JwtService under package com.authservice.service and annotate with @Service
+------------------------------
+ Add codes in JwtService.java  
+------------------------------
+package com.authservice.service;
+
+import java.util.Date;
+import org.springframework.stereotype.Service;
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.algorithms.Algorithm;
+
+@Service
+public class JwtService {
+
+    private static final String SECRET_KEY = "my-super-secret-key";
+    private static final long EXPIRATION_TIME = 86400000; // 1 day
+
+    public String generateToken(String username, String role) {
+        return JWT.create()
+            .withSubject(username)
+            .withClaim("role", role)
+            .withIssuedAt(new Date())
+            .withExpiresAt(new Date(System.currentTimeMillis() + EXPIRATION_TIME))
+            .sign(Algorithm.HMAC256(SECRET_KEY));
+    }
+}
+----------------------------------------------------------------------------------
+
+Step 4: Go to AuthController and Update code
+	i) Add dependency injection code first- 
+		@Autowired
+		private JwtService jwtService;
+
+	ii) Add this line after getting successfull authentication
+
+		String jwtToken = jwtService.generateToken(dto.getUsername(),
+		 authenticate.getAuthorities().iterator().next().getAuthority());
+---------------------------------------------------------------------------------
+Updated AuthController code:
+----------------------------
+package com.authservice.controller;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.authservice.dto.APIResponse;
+import com.authservice.dto.LoginDto;
+import com.authservice.dto.UserDto;
+import com.authservice.service.AuthService;
+import com.authservice.service.JwtService;
+
+@RestController
+@RequestMapping("/api/v1/auth")
+public class AuthController {
+	
+	@Autowired  //it gives error creating a bean so add this AuthenticationManager in config file.
+	private AuthenticationManager authManager;
+	
+	@Autowired
+	private AuthService authService; //injecting bean and use this authService below coding part
+	
+	@Autowired
+	private JwtService jwtService;  //code for generation of JWT Token
+	
+	@PostMapping("/register")
+	public ResponseEntity<APIResponse<String>> register(@RequestBody UserDto dto){
+		APIResponse<String> response = authService.register(dto);
+		return new ResponseEntity<>(response, HttpStatusCode.valueOf(response.getStatus()));
+	}
+	
+	@PostMapping("/login")
+	public ResponseEntity<APIResponse<String>> login(@RequestBody LoginDto dto){ //this dto has
+							//username and password that user entered
+		APIResponse<String> response = new APIResponse<>(); 
+//You can't directly give username and password to AuthenticationManager for this apply this line
+		UsernamePasswordAuthenticationToken token = 
+				new UsernamePasswordAuthenticationToken(dto.getUsername(),dto.getPassword());
+		
+		try {
+			 Authentication authenticate = authManager.authenticate(token);
+			 
+			 if(authenticate.isAuthenticated()) {
+				 //code for Generating JWT Token
+				 String jwtToken = jwtService.generateToken(dto.getUsername(),
+			                authenticate.getAuthorities().iterator().next().getAuthority());
+
+			            response.setMessage("Login Successful");
+			            response.setStatus(200);
+			            response.setData(jwtToken);  // return JWT
+			            return new ResponseEntity<>(response, HttpStatusCode.valueOf(response.getStatus()));
+			        }
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
+		 response.setMessage("Failed");
+		 response.setStatus(401);
+		 response.setData("Un-Authorized Access");
+		 return new ResponseEntity<>(response, HttpStatusCode.valueOf(response.getStatus()));
+	 }
+		
+}
+--------------------------------------------------------------------------------------------------------
+
+Step 5: Run your Project 
+	Go to swagger to access swagger use url: http://localhost:8080/swagger-ui/index.html#/auth-controller/login
+
+{
+  "username": "mike",
+  "password": "testing"
+}
+
+	
+Response body
+{
+  "message": "Login Successful",
+  "status": 200,
+  "data": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+.eyJzdWIiOiJtaWtlIiwicm9sZSI6IlJPTEVfVVNFUiIsImlhdCI6MTc1NDQ3OTEzNCwiZXhwIjoxNzU0NTY1NTM0fQ
+.G3yuXPhpTX9020Igvek7lxfWmy8D51MrvnXFCun5FPc"
+}
+It gives me Token
+-------------------------------
+
+Step 6: copy your token go to jwt.io website and paste token in debugger.
+		it tells details of Token as:
+Decoded Header
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+
+Decoded Payload
+{
+  "sub": "mike",
+  "role": "ROLE_USER",
+  "iat": 1754479134,
+  "exp": 1754565534
+}
+
+JWT Signature Verification
+(Optional)
+Enter the secret used to sign the JWT below:
+
+********************************************************************************************************

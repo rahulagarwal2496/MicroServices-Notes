@@ -1,0 +1,414 @@
+#################################################################################
+Day 9: 13 How to perform Authorization - Role Based Access in your project
+#################################################################################
+
+Step 1: Modify UserDto.java    Add private String role; and generate Geeters&Setters for it 
+---------------------------  ############################################################
+package com.authservice.dto;
+
+public class UserDto {
+	
+	private long id;
+	private String name;
+	private String username;
+	private String email;
+	private String password;
+	private String role;    //This one is added
+	
+
+	public String getRole() {
+		return role;
+	}
+
+	public void setRole(String role) {
+		this.role = role;
+	}
+
+	public long getId() {
+		return id;
+	}
+
+	public void setId(long id) {
+		this.id = id;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public void setName(String name) {
+		this.name = name;
+	}
+
+	public String getUsername() {
+		return username;
+	}
+
+	public void setUsername(String username) {
+		this.username = username;
+	}
+
+	public String getEmail() {
+		return email;
+	}
+
+	public void setEmail(String email) {
+		this.email = email;
+	}
+
+	public String getPassword() {
+		return password;
+	}
+
+	public void setPassword(String password) {
+		this.password = password;
+	}
+
+}
+
+--------------------------
+Step 2: Modify User.java       @Column(name="role")
+				private String role; and generate Geeters&Setters for it
+--------------------------      ########################################################
+package com.authservice.entity;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name="user")
+public class User {
+	
+	@Id
+	@GeneratedValue(strategy = GenerationType.IDENTITY)
+	private long id;
+	
+	@Column(name="name", nullable = false)
+	private String name;
+	
+	@Column(name="username", nullable = false, unique = true)
+	private String username;
+	
+	@Column(name="email", nullable = false, unique = true)
+	private String email;
+	
+	@Column(name = "password")
+	private String password;
+	
+	@Column(name="role")
+	private String role; //this one is added
+
+	public long getId() {
+		return id;
+	}
+
+	public String getRole() {
+		return role;
+	}
+
+	public void setRole(String role) {
+		this.role = role;
+	}
+
+	public void setId(long id) {
+		this.id = id;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public void setName(String name) {
+		this.name = name;
+	}
+
+	public String getUsername() {
+		return username;
+	}
+
+	public void setUsername(String username) {
+		this.username = username;
+	}
+
+	public String getEmail() {
+		return email;
+	}
+
+	public void setEmail(String email) {
+		this.email = email;
+	}
+
+	public String getPassword() {
+		return password;
+	}
+
+	public void setPassword(String password) {
+		this.password = password;
+	}
+	
+}
+
+-------------------------------------------------------------------------------
+Step 3: Drop the table in Database so that it reflects new column changes
+
+Step 4: now go to AuthService and set role always set role as ROLE Hyphen Rolename i.e ROLE_USER, ROLE_ADMIN, ROLE_OWNER etc.
+----------------------------
+modify AuthService.java        Add this line:    user.setRole("ROLE_USER");
+----------------------------   ############################################
+package com.authservice.service;
+
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+import com.authservice.dto.APIResponse;
+import com.authservice.dto.UserDto;
+import com.authservice.entity.User;
+import com.authservice.repository.UserRepository;
+
+@Service
+public class AuthService {
+	 
+	@Autowired
+	 private UserRepository userRepository;
+	
+	@Autowired
+	private PasswordEncoder passwordEncoder;
+	//when i run this it gives error creating a bean, SpringIOC will not able to create a bean.
+	//when there are third party libraries that we are using it spring IOC doesnot have information
+	//which object to create so we have to tell our springIOC that whenever a PasswordEncoder is used
+	//if this reference variable is used you have to create bean of the type BCryptPasswordEncoder.
+	//for this go to config class AppSecurityConfig.java and add 
+	//@Bean
+	//public PasswordEncoder getEncodedPassword() {
+	//	return new BCryptPasswordEncoder();
+	//  }
+	
+	
+	public APIResponse<String> register(UserDto userDto){
+		
+		APIResponse<String> response = new APIResponse<>();  //Creating API Response object
+		
+//Directly we cannot register user for this few things needs to perform:
+		
+	//Check whether username exists
+		if(userRepository.existsByUsername(userDto.getUsername())) {
+			response.setMessage("Registration Failed");
+			response.setStatus(500);
+			response.setData("User with user name already exists");
+			return response;
+		}
+		
+	//check whether Email exists
+		if(userRepository.existsByEmail(userDto.getEmail())) {
+			response.setMessage("Registration Failed");
+			response.setStatus(500);
+			response.setData("User with Email Id already exists");
+			return response;
+		}
+		
+	//Encode the password before saving that to the database
+		//To encode password we need to generate new Encrypt Bean through Dependency Injection
+		
+		String encryptedPassword = passwordEncoder.encode(userDto.getPassword()); 
+		//getting raw password using userDto.getPassword() and encode it.
+		
+		//Taking DTO content and copy that to user Entity for this Spring provides a class called
+		//BeanUtils and use copyProperties() method as BeanUtils.copyProperties()
+		User user=new User(); //Copying data of User entity to user
+		BeanUtils.copyProperties(userDto, user);  //All entity content go to user but password now is raw password.
+		
+		user.setPassword(encryptedPassword); //Encrypting password
+		
+		user.setRole("ROLE_USER"); //Add this line to specify role of user
+		
+		User savedUser = userRepository.save(user);
+		
+		//If something went wrong throw an exception
+		if(savedUser==null) {
+			//Custom Exception
+		}
+		
+		
+	//finally save the user and return response as APIResponse	
+		response.setMessage("Registration Completed");
+		response.setStatus(201);
+		response.setData("User has been registered");
+		return response;
+	
+	}
+
+}
+--------------------------------------------------------------------------------------------------------------
+Step 5: Go to AppSecurityConfig and Add this line: .requestMatchers("/api/v1/welcome/message").hasRole("USER")
+---------------------------------------------------###########################################################
+package com.authservice.config;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+import com.authservice.service.CustomUserDetailsService;
+
+@Configuration
+@EnableWebSecurity
+public class AppSecurityConfig {
+	
+	@Autowired
+	private CustomUserDetailsService customUserDetailsService;
+	
+	private String[] openUrl= {
+			"/api/v1/auth/register",
+			"/api/v1/auth/login",
+    		"/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/swagger-resources/**",
+            "/webjars/**"
+       };  	//Created an String Array to keep Urls open
+	
+	@Bean
+	public PasswordEncoder getEncodedPassword() {
+		return new BCryptPasswordEncoder();
+	} //it creates an object of BCryptPasswordEncoder and give it to Spring IOC.
+
+	@Bean
+	public AuthenticationManager authManager(AuthenticationConfiguration config) throws Exception {
+		return config.getAuthenticationManager();
+	}
+	
+	@Bean
+	public AuthenticationProvider authProvider() {
+
+		DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+		
+		authProvider.setUserDetailsService(customUserDetailsService);
+		//now DaoAuthenticationProvider is able to supply the username to it
+		authProvider.setPasswordEncoder(getEncodedPassword()); //since password is encoded so decrypting password
+		return authProvider;
+	}
+	
+	//In this we need to Configure how to keep
+	//1. which url open 
+	//2. which url to authenticate
+	//3. which URL To do Authorization
+	@Bean 	//it will create an object of http and give it to IOC
+	public SecurityFilterChain securityConfig(HttpSecurity http) throws Exception{
+		//whatever input coming from this http.authorizeHttpRequests simply goto req
+		//http.authorizeHttpRequests(
+		//		req->{		//we are using lambdas expression here req-> 
+		//in latest version of springframework we have to use like this otherwise it will not work
+		//			req.anyRequest().permitAll(); //allows all urls coming to req
+		//		}
+		//		);
+		//return http.build();  //to finish object and apply return on it
+		
+		//the incoming url if is this "http://localhost:8080/api/v1/auth/welcome" permit all 
+		//any request apart from that authenticated.
+		http.csrf(csrf -> csrf.disable())  //Disable CSRF
+		.authorizeHttpRequests(
+				req->
+					req.requestMatchers(openUrl).permitAll()
+					.requestMatchers("/api/v1/welcome/message").hasRole("USER") //only as USER you can access this
+					.anyRequest().authenticated()
+				);  //httpBasic() for doing form related testing.
+		return http.build();
+	}
+}
+
+---------------------------------------------------------------------------------------
+Step 6: go to CustomUserDetailsService and add this line in role column
+	Add this line: Collections.singleton(new SimpleGrantedAuthority(user.getRole())
+----------------------#################################################################
+package com.authservice.service;
+
+import java.util.Collections;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+
+import com.authservice.entity.User;
+import com.authservice.repository.UserRepository;
+
+@Service
+public class CustomUserDetailsService implements UserDetailsService {
+	
+	@Autowired
+	private UserRepository userRepository;
+	
+	@Override
+	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+		User user = userRepository.findByUsername(username);
+		
+		return new org.springframework.security.core.userdetails.User
+				(user.getUsername(),user.getPassword(),Collections.singleton(new SimpleGrantedAuthority(user.getRole())));
+		//return new org.springframework.security.core.userdetails.User
+				//(user.getUsername(),user.getPassword(),Collections.emptyList());
+		//import User as this is built-in User 
+	}
+
+}
+-----------------------------------------------------------
+Step 7: Add .httpBasic();   for doing form related testing.
+------------------------------------------------------------
+Step 8: Run your application 
+-------------------------------
+	i) Test Using Swagger for Registering a user
+		http://localhost:8080/api/v1/auth/register
+{
+  "id": 0,
+  "name": "mike",
+  "username": "mike",
+  "email": "mike@gmail.com",
+  "password": "testing",
+  "role": "string"
+}
+
+Response body
+{
+  "message": "Registration Completed",
+  "status": 201,
+  "data": "User has been registered"
+}
+
+	ii)Test Using Postman
+🔹 Test with Postman
+	Choose GET and enter:
+		http://localhost:8080/api/v1/welcome/message
+
+Go to Authorization tab
+	Type: Basic Auth
+	Username: mike
+	Password: testing (assuming that's the encoded password in DB)
+
+	Click Send.
+
+You should get a 200 OK and the "Welcome" message if the role is correctly configured.
+
+*****************************************************************************************************
+Step 9: you can add these lines also if not working:
+
+http.authorizeHttpRequests(
+				req-> {
+					req.requestMatchers(openUrl)
+					.permitAll()
+					.requestMatchers("/api/v1/welcome/message").hasRole("USER") //only as USER you can access this
+					.anyRequest()
+					.authenticated();
+				}).httpBasic();  //for doing form related testing.
+		
+		return http.csrf().disable().build(); 
+##################################################################################################################################################
