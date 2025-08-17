@@ -1,0 +1,589 @@
+########################################################
+Day 14: 22 Converting Spring Security into MicroServices
+########################################################
+Step 1: Create One microservice name as microservice1 and package com.microservice1
+	Add Dependencies: 
+			  Spring Security
+			  Spring Boot Dev Tools
+			  Eureka Discovery Client
+			  Spring web
+Don't add Reactive Gatewaybecause that's a different project.
+
+Step 2: create package com.microservice1.controller and under that create a class WelcomeControllerApi
+==========================
+WelcomeControllerApi class
+==========================
+package com.microservice1.controller;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class WelcomeControllerApi {
+	
+	@GetMapping("/message")
+		public String getMessage() {
+			return "welcome";
+		}
+	}
+===================================================================
+Step 3: Got to application.properties file and add Port 
+	server.port=9092
+
+Step 4: Add @EnableDiscoveryClient and @EnableFeignClients in main class
+========================
+Microservice1Application
+========================
+package com.microservice1;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.cloud.openfeign.EnableFeignClients;
+
+@SpringBootApplication
+@EnableDiscoveryClient
+@EnableFeignClients
+public class Microservice1Application {
+
+	public static void main(String[] args) {
+		SpringApplication.run(Microservice1Application.class, args);
+	}
+
+}
+=================================================================================
+Step 5: Flow to start project 
+				---> eureka server
+				---> api gateway
+				---> microservices that you develop so that it will register with eureka server and 
+					using api gateway it gets a common end point
+Start service-registry-eureka then api-gateway-1 then microservice1 and then authservice project.
+
+Step 6: localhost:9092/message this URL is secured.
+	now we need to provide a Token and access this URL.
+
+Step 7: Go to api-gateway-1 and configure your Yml file
+ 
+	 - id: microservice-api-1   #this id should be unique
+          uri: lb://MICROSERVICE1   #this is your microservice name here lb stands for load balancer
+          predicates:
+            - Path=/micro1/**        #this is user defined we can write anything instead of micro1
+          filters:
+            - RewritePath=/micro1/(?<segment>.*), /${segment}
+
+Step 8: Add  "/micro1/message" under openApiEndpoints in JwtAuthenticationFilter class
+
+	  private static final List<String> openApiEndpoints = List.of(
+            "/auth/api/v1/auth/login",
+            "/auth/api/v1/auth/register",
+            "/micro1/message"
+    );
+
+Step 9: go to postman  Get  localhost:5555/micro1/message it gives 401 Unauthorized
+
+Step 10: go to microservice1 and introduce a config file 
+	add package com.microservice1.config and a class AppSecurityConfig
+===================
+AppSecurityConfig
+===================
+package com.microservice1.config;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+import com.microservice1.filter.JwtFilter;
+
+
+@Configuration
+@EnableWebSecurity
+public class AppSecurityConfig {
+    
+    @Autowired
+    private JwtFilter filter;
+
+    String[] publicEndpoints = {
+        "/v3/api-docs/**",
+        "/swagger-ui/**",
+        "/swagger-ui.html",
+        "/swagger-resources/**",
+        "/webjars/**",
+        "/actuator/**", 
+        "/eureka/**",
+        "/message"
+    };
+
+    @Bean
+    public PasswordEncoder getEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain securityConfig(HttpSecurity http) throws Exception {
+        
+        http.authorizeRequests(req -> {
+            req.requestMatchers(publicEndpoints)
+                .permitAll()
+               // .requestMatchers("/welcome").hasRole("USER")  // Ensure no "ROLE_" prefix is used here
+                .anyRequest()
+                .authenticated();
+        })
+        .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class);
+        
+        return http.csrf().disable().build();
+    }
+}
+==============================================================================================================
+Step 11: AppSecurityConfig class is requesting to have Filter class so:
+	 create a package com.microservice1.filter and create a new class JwtFilter
+=========
+JwtFilter
+=========
+package com.microservice1.filter;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import com.microservice1.client.AuthServiceFeignClient;
+import com.microservice1.dto.User;
+
+import java.io.IOException;
+import java.util.Collections;
+
+@Component
+public class JwtFilter extends OncePerRequestFilter {
+
+    @Autowired
+    private JwtService jwtService;
+    
+    @Autowired
+    private AuthServiceFeignClient authServiceFeignClient;
+
+  
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) throws ServletException, IOException {
+
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String jwt = authHeader.substring(7);
+            String username = jwtService.validateTokenAndRetrieveSubject(jwt);
+
+            User user = authServiceFeignClient.getUserByUsername(username,authHeader);
+            
+        
+            
+                var authToken = new UsernamePasswordAuthenticationToken(
+                		user, null, Collections.singleton(new SimpleGrantedAuthority(user.getRole())));
+
+                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                SecurityContextHolder.getContext().setAuthentication(authToken);
+            }
+       
+
+        filterChain.doFilter(request, response);
+
+
+    }
+}
+======================================================================================================================
+Step 12: JwtFilter class is taking JwtService class so
+	 create a new class JwtService inside package com.microservice1.filter
+==========
+JwtService
+==========
+package com.microservice1.filter;
+
+import java.util.Date;
+import org.springframework.stereotype.Service;
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.algorithms.Algorithm;
+
+@Service
+public class JwtService {
+
+    private static final String SECRET_KEY = "my-super-secret-key"; //secret key remains same
+    private static final long EXPIRATION_TIME = 86400000; // 1 day
+
+//    public String generateToken(String username, String role) {
+//        return JWT.create()
+//            .withSubject(username)
+//            .withClaim("role", role)
+//            .withIssuedAt(new Date())
+//            .withExpiresAt(new Date(System.currentTimeMillis() + EXPIRATION_TIME))
+//            .sign(Algorithm.HMAC256(SECRET_KEY));
+//    }
+
+    public String validateTokenAndRetrieveSubject(String token) {
+        return JWT.require(Algorithm.HMAC256(SECRET_KEY))
+            .build()
+            .verify(token)
+            .getSubject();
+    }
+}
+==========================================================================================
+Step 13: We are introducing Feign Client because i want user details.
+	 FeignClient interact with authservice and based on the username it gets the user details.
+
+Create a new package com.microservice1.client and create a class AuthServiceFeignClient
+======================
+AuthServiceFeignClient
+======================
+package com.microservice1.client;
+
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import com.microservice1.dto.User;
+
+
+@FeignClient(name = "AUTHSERVICE")
+public interface AuthServiceFeignClient {
+	
+	 @GetMapping("/api/v1/auth/get-user")
+	    User getUserByUsername(@RequestParam("username") String username, @RequestHeader("Authorization") String token);
+	
+   }
+======================================================================================================================
+
+Step 14: Add FeignClient Dependencies in microservice1 pom.xml file:
+
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-openfeign</artifactId>
+    </dependency>
+
+Step 15: Add Dependencies in microservice1 pom.xml file:
+
+		<dependency>
+			<groupId>com.auth0</groupId>
+			<artifactId>java-jwt</artifactId>
+			<version>4.4.0</version>
+		</dependency>
+============================================================================
+Step 16: go to authservice project and update code of Authcontroller class
+Add these codes:
+
+	@Autowired
+	private UserRepository repository;
+
+
+	@GetMapping("/get-user")
+	public User getUserByUserName(@RequestParam String username) {
+		User user = repository.findByUsername(username);
+		return user;
+	}
+
+==============
+AuthController
+==============
+package com.authservice.controller;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.authservice.dto.APIResponse;
+import com.authservice.dto.LoginDto;
+import com.authservice.dto.UserDto;
+import com.authservice.entity.User;
+import com.authservice.repository.UserRepository;
+import com.authservice.service.AuthService;
+import com.authservice.service.JwtService;
+
+@RestController
+@RequestMapping("/api/v1/auth")
+public class AuthController {
+	
+	@Autowired  //it gives error creating a bean so add this AuthenticationManager in config file.
+	private AuthenticationManager authManager;
+	
+	@Autowired
+	private AuthService authService; //injecting bean and use this authService below coding part
+	
+	@Autowired
+	private JwtService jwtService;  //code for generation of JWT Token
+	
+	@Autowired
+	private UserRepository repository;
+	
+	@PostMapping("/register")
+	public ResponseEntity<APIResponse<String>> register(@RequestBody UserDto dto){
+		APIResponse<String> response = authService.register(dto);
+		return new ResponseEntity<>(response, HttpStatusCode.valueOf(response.getStatus()));
+	}
+	
+	@PostMapping("/login")
+	public ResponseEntity<APIResponse<String>> login(@RequestBody LoginDto dto){ //this dto has
+														//username and password that user entered
+		APIResponse<String> response = new APIResponse<>(); 
+//You can't directly give username and password to AuthenticationManager for this apply this line
+		UsernamePasswordAuthenticationToken token = 
+				new UsernamePasswordAuthenticationToken(dto.getUsername(),dto.getPassword());
+		
+		try {
+			 Authentication authenticate = authManager.authenticate(token);
+			 
+			 if(authenticate.isAuthenticated()) {
+				 //code for Generating JWT Token
+				 String jwtToken = jwtService.generateToken(dto.getUsername(),
+			                authenticate.getAuthorities().iterator().next().getAuthority());
+
+			            response.setMessage("Login Successful");
+			            response.setStatus(200);
+			            response.setData(jwtToken);  // return JWT
+			            return new ResponseEntity<>(response, HttpStatusCode.valueOf(response.getStatus()));
+			        }
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
+		 response.setMessage("Failed");
+		 response.setStatus(401);
+		 response.setData("Un-Authorized Access");
+		 return new ResponseEntity<>(response, HttpStatusCode.valueOf(response.getStatus()));
+	 }
+	
+	@GetMapping("/get-user")
+	public User getUserByUserName(@RequestParam String username) {
+		User user = repository.findByUsername(username);
+		return user;
+	}
+}
+==============================================================================================================================
+Step 17: we donot have User entity class so create a new package com.microservice1.dto and under that copy entity class 
+	 i.e. User.java class of authservice and paste it.
+====
+User
+====
+package com.microservice1.dto;
+
+public class User {
+	
+	private long id;
+	private String name;
+	private String username;
+	private String email;	
+	private String password;
+	private String role; //this one is added
+
+	public long getId() {
+		return id;
+	}
+
+	public String getRole() {
+		return role;
+	}
+
+	public void setRole(String role) {
+		this.role = role;
+	}
+
+	public void setId(long id) {
+		this.id = id;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public void setName(String name) {
+		this.name = name;
+	}
+
+	public String getUsername() {
+		return username;
+	}
+
+	public void setUsername(String username) {
+		this.username = username;
+	}
+
+	public String getEmail() {
+		return email;
+	}
+
+	public void setEmail(String email) {
+		this.email = email;
+	}
+
+	public String getPassword() {
+		return password;
+	}
+
+	public void setPassword(String password) {
+		this.password = password;
+	}
+	
+}
+=========================================================
+Step 18: Add this line in JwtAuthenticationFilter of api-gateway-1 microservice 
+	"/micro1/message", List.of("ROLE_ADMIN")
+
+Code: private static final Map<String, List<String>> protectedEndpointsWithRoles = Map.of(
+    		//"/auth/api/v1/welcome/message", List.of("ROLE_ADMIN"),
+    		"/micro1/message", List.of("ROLE_ADMIN")
+    	);
+
+#######################
+JwtAuthenticationFilter
+#######################
+package com.apigateway.filter;
+
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.auth0.jwt.interfaces.DecodedJWT;
+
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import java.util.List;
+import java.util.Map;
+
+@Component
+public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
+
+    private static final String SECRET_KEY = "my-super-secret-key";
+    //This SECRET_KEY = "my-super-secret-key" has to match with SECRET_KEY of JwtService of authservice project.
+    //Because to encrypt and decrypt this SECRET_KEY is required same.
+    private static final List<String> openApiEndpoints = List.of(
+            "/auth/api/v1/auth/login",
+            "/auth/api/v1/auth/register"
+    );
+
+    private static final Map<String, List<String>> protectedEndpointsWithRoles = Map.of(
+    		//"/auth/api/v1/welcome/message", List.of("ROLE_ADMIN"),
+    		"/micro1/message", List.of("ROLE_ADMIN")
+    	);
+
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        String requestPath = exchange.getRequest().getURI().getPath();
+     // This is the method where URL comes with Token automatically.
+        
+        // Allow public endpoints
+        if (isPublicEndpoint(requestPath)) {
+            return chain.filter(exchange);
+        }
+
+        String authHeader = exchange.getRequest().getHeaders().getFirst("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return exchange.getResponse().setComplete();
+        }
+
+        String token = authHeader.substring(7);
+
+        try {
+            DecodedJWT jwt = JWT.require(Algorithm.HMAC256(SECRET_KEY))
+                    .build()
+                    .verify(token);
+
+            String role = jwt.getClaim("role").asString();
+
+            System.out.println("Request path: " + requestPath);
+            System.out.println("Role from token: " + role);
+
+            if (!isAuthorized(requestPath, role)) {
+                exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+                return exchange.getResponse().setComplete();
+            }
+
+            // Pass role to downstream services (optional)
+            exchange = exchange.mutate()
+                    .request(r -> r.header("X-User-Role", role))
+                    .build();
+
+        } catch (JWTVerificationException e) {
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return exchange.getResponse().setComplete();
+        }
+
+        return chain.filter(exchange);
+    }
+
+    private boolean isPublicEndpoint(String path) {
+        return openApiEndpoints.stream().anyMatch(path::equalsIgnoreCase); 
+  //it checks whether URL is present inside openApiEndpoints ArrayList if present then directly verify Url as open URL.
+    }
+
+    private boolean isAuthorized(String path, String role) {
+        for (Map.Entry<String, List<String>> entry : protectedEndpointsWithRoles.entrySet()) {
+            String protectedPath = entry.getKey();
+            List<String> allowedRoles = entry.getValue();
+
+            if (path.startsWith(protectedPath)) {
+                System.out.println("Matched protected path: " + protectedPath + " | Allowed roles: " + allowedRoles);
+                return allowedRoles.contains(role);
+            }
+        }
+        return true; // Allow access if path is not protected (can be changed to false to deny by default)
+    }
+
+    @Override
+    public int getOrder() {
+        return -1;
+    }
+}
+==============================================================================================================================
+Step 19: Run all microservices and perform Testing using postman
+      i) POST http://localhost:5555/auth/api/v1/auth/login
+{
+    "username":"adam",
+    "password":"testing"
+}
+ Token is generated copy Token
+
+Go to ii) Get localhost:5555/micro1/message
+Authentication---> Bearer Token, Paste your Token here and click Send it shows 
+		200 Ok welcome message
+
+Go to iii) POST http://localhost:5555/auth/api/v1/auth/login
+{
+    "username":"mike",
+    "password":"testing"
+}
+Token is generated copy Token
+
+Go to iv) Get localhost:5555/micro1/message
+Authentication---> Bearer Token, Paste your Token here and click Send it shows 
+		403 Forbidden as role of mike is user not admin
+===============================================================================
+Step 20: Theory- 
+
+**************************************************************************************************************************************

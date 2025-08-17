@@ -1,0 +1,304 @@
+########################################################
+Day 13: 21 Converting Spring Security into MicroServices
+########################################################
+
+Step 1: Delete/Remove all Projects except authservice.
+	now authservice microservice is responsible for registration and login. now since it is a microservice we need to register 
+this with service Discovery because that where we are going to make the URL generic.
+
+###################################################
+Step 2: Create Eureka Server / Service Registry:-
+###################################################
+a) Create a Spring Boot project named service-registry-eureka with package name com.serviceregistry
+ Add dependency: Eureka Server
+
+b) Add @EnableEurekaServer in main class (ServiceRegistryApplication) and import it.
+
+c) Add in application.properties file:                 
+         server.port=8761 			    //to run eureka Server on port 8761                                   
+         eureka.client.register-with-eureka=false  //we are telling that donot register eureka server itself as a client.            
+         eureka.client.fetch-registry=false 	  //when i try to get client details i donot want my eureka server 
+						 //to treat this as client & even try to make an attempt to fetch the details.
+Note: 
+This tells the Eureka Server:
+Don't register itself as a client.
+Don't try to fetch registry data (because it's the registry).                
+--------------------------------------------------------------
+|      | Run Eureka Server                                    
+|      | Access: http://localhost:8761   go to browser and hit http://localhost:8080 
+					 it shows all microservices registered with eureka server.                     
+==============================================================
+By running eureka server on port 8761 all your microservices will automatically registered with eureka server without doing anything.
+-------------------------------------------------------------------------------------------------------------------------------------
+
+###################################################
+Step 3: Make authservice project as Eureka Client
+###################################################
+Right click on authservice got to spring then Add Starters and select Eureka Discovery Client click on next click on 0 button and finish.
+spring--> Add Starter --> Eureka Discovery Client -->Next --> copy left to right button --> Finish
+
+Step 4: Enable your client for this go to AuthserviceApplication.java of authservice and annotate it with @EnableDiscoveryClient and import it.
+
+Step 5: Add Dependencies if @EnableDiscoveryClient is not doing right import:
+
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+    </dependency>
+
+Also Add <dependencyManagement> after </dependencies> This supplies right version of spring-cloud-starter-netflix-eureka-client.
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.springframework.cloud</groupId>
+				<artifactId>spring-cloud-dependencies</artifactId>
+				<version>${spring-cloud.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
+Step 6: Go to application.properties file of authservice and add:
+	eureka.client.service-url.defaultZone=http://localhost:8761/eureka     (Optional to add but adding is good practise).
+
+Step 7: Start your project authservice it will automatically register with eureka server.
+
+Step 8: Register with API Gateway beacause API Gateway give us common entry point.
+==================================
+How to implement API gateway:
+==================================
+Step i): crete a project name it as api-gateway-1 with com.apigateway
+
+Step ii): Add dependencies 
+SpringBoot Dev Tools
+Eureka Discovery Client
+Reactive Gateway
+
+Step iii): Mention routing in yaml file
+--------------------------------------------
+convert application.properties file to application.yml file and write codes as:
+
+server:
+  port: 5555
+  
+spring:
+  application:
+    name: api-gateway-1
+
+  cloud:
+    gateway:
+      routes:
+        - id: authservice-api
+          uri: lb://AUTHSERVICE   #Eureka Client name
+          predicates:
+            - Path=/auth/**
+          filters:
+            - RewritePath=/auth/(?<segment>.*), /${segment}
+        
+        - id: microservice-api-2   #this id should be unique
+          uri: lb://MICROSERVICE-2   #this is your microservice name here lb stands for load balancer
+          predicates:
+            - Path=/micro2/**        #this is user defined we can write anything instead of micro2
+          filters:
+            - RewritePath=/micro2/(?<segment>.*), /${segment}
+
+To add more microservice add -id: to last line and give your microservice name
+
+Step iv):Run your api-gateway-1 project it runs on port 5555  
+	url of ApiGateway is  http://localhost:5555/auth then add url that you want to add
+			  i.e http://localhost:5555/auth/api/v1/auth/login
+1)to test go to postman Post http://localhost:5555/auth/api/v1/auth/login
+{
+    "username":"mike",
+    "password":"testing"
+}
+it generates Token 
+now we are not communicating directly with microservice i am communicating microservice via API Gateway.
+
+2) Again  go to postman:- Post http://localhost:5555/auth/api/v1/auth/register
+{
+    "username":"adam",
+    "name":"adam",
+    "email":"adam@gmail.com",
+    "password":"testing"
+}
+
+3) Again  go to postman:- Get http://localhost:5555/auth/api/v1/welcome/message
+it gives me 403 Forbidden
+-------------------------------------------------------------------------------------------------------------
+Step 9: Theory- All microservices register with Eureka Server. API Gateway is also registered with Eureka Server.
+API Gateway is common entry point for All URL. In order to verify Token we write code in API Gateway But in 
+authservice we write logic to create Token only, checking of Token we will do it in API Gateway.
+--------------------------------------------------------------------------------------------------------------------
+
+Step 10: got to api-gateway-1 create one package com.apigateway.filter and inside this create one class as JwtAuthenticationFilter
+
+This class intercept all incoming URLs. whichever URL comes with Token has come to this class.
+In order to ensure that the URL within the token comes to this class You will have to make this class 
+JwtAuthenticationFilter implements GlobalFilter
+
+JwtAuthenticationFilter ctrl+1 Add unimplemented method
+-----------------------
+JwtAuthenticationFilter
+-----------------------
+package com.apigateway.filter;
+
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.web.server.ServerWebExchange;
+
+import reactor.core.publisher.Mono;
+
+public class JwtAuthenticationFilter implements GlobalFilter{
+
+	@Override
+	public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+		// This is the method where URL comes with Token automatically.
+		return null;
+	}
+
+}
+
+----------------------------
+JwtAuthenticationFilter.java 
+----------------------------
+package com.apigateway.filter;
+
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.auth0.jwt.interfaces.DecodedJWT;
+
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import java.util.List;
+import java.util.Map;
+
+@Component
+public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
+
+    private static final String SECRET_KEY = "my-super-secret-key";
+    //This SECRET_KEY = "my-super-secret-key" has to match with SECRET_KEY of JwtService of authservice project.
+    //Because to encrypt and decrypt this SECRET_KEY is required same.
+    private static final List<String> openApiEndpoints = List.of(
+            "/auth/api/v1/auth/login",
+            "/auth/api/v1/auth/register"
+    );
+
+    private static final Map<String, List<String>> protectedEndpointsWithRoles = Map.of(
+    		"/auth/api/v1/welcome/message", List.of("ROLE_ADMIN")
+    	);
+
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        String requestPath = exchange.getRequest().getURI().getPath();
+     // This is the method where URL comes with Token automatically.
+        
+        // Allow public endpoints
+        if (isPublicEndpoint(requestPath)) {
+            return chain.filter(exchange);
+        }
+
+        String authHeader = exchange.getRequest().getHeaders().getFirst("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return exchange.getResponse().setComplete();
+        }
+
+        String token = authHeader.substring(7);
+
+        try {
+            DecodedJWT jwt = JWT.require(Algorithm.HMAC256(SECRET_KEY))
+                    .build()
+                    .verify(token);
+
+            String role = jwt.getClaim("role").asString();
+
+            System.out.println("Request path: " + requestPath);
+            System.out.println("Role from token: " + role);
+
+            if (!isAuthorized(requestPath, role)) {
+                exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+                return exchange.getResponse().setComplete();
+            }
+
+            // Pass role to downstream services (optional)
+            exchange = exchange.mutate()
+                    .request(r -> r.header("X-User-Role", role))
+                    .build();
+
+        } catch (JWTVerificationException e) {
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return exchange.getResponse().setComplete();
+        }
+
+        return chain.filter(exchange);
+    }
+
+    private boolean isPublicEndpoint(String path) {
+        return openApiEndpoints.stream().anyMatch(path::equalsIgnoreCase); 
+  //it checks whether URL is present inside openApiEndpoints ArrayList if present then directly verify Url as open URL.
+    }
+
+    private boolean isAuthorized(String path, String role) {
+        for (Map.Entry<String, List<String>> entry : protectedEndpointsWithRoles.entrySet()) {
+            String protectedPath = entry.getKey();
+            List<String> allowedRoles = entry.getValue();
+
+            if (path.startsWith(protectedPath)) {
+                System.out.println("Matched protected path: " + protectedPath + " | Allowed roles: " + allowedRoles);
+                return allowedRoles.contains(role);
+            }
+        }
+        return true; // Allow access if path is not protected (can be changed to false to deny by default)
+    }
+
+    @Override
+    public int getOrder() {
+        return -1;
+    }
+}
+==============================================================================================================================
+Step 11: Add Dependency for getting algorithm to encrypt and decrypt Token:
+
+		<dependency>
+		    <groupId>com.auth0</groupId>
+		    <artifactId>java-jwt</artifactId>
+		    <version>4.4.0</version> <!-- or the latest stable version -->
+		</dependency>
+--------------------------------------------------------------------------------------------------------------------------------
+Step 12: Stop all services and start first---> service-registry-eureka
+					  ---> authservice then api-gateway-1
+
+Step 13: Test our Application go to postman 
+	i) if Token is not Present Then go to 
+	POST   http://localhost:5555/auth/api/v1/auth/login 
+{
+    "username":"mike",
+    "password":"testing"
+} 
+and generate new Token And use This Token
+
+	ii)	Get   http://localhost:5555/auth/api/v1/welcome/message
+In Authorization ---> Auth Type ---> Select Bearer Token And Paste the Token 
+If the role of user is ADMIN then it prints welcome and 200 OK status Code else
+It gives 403 Forbidden as user Role is User not Admin. you can check in database also.
+--------------------------------------------------------------------------------------------------
+
+###########################################
+How to secure microservice prject?
+##############################################
+Step 1: Create AuthService with Spring Security & JWT Token
+Step 2: When you login it should generate JWT Token
+Step 3: Verify the Token in API Gateway using JwtAuthenticationFilter implements GlobalFilter class
+Step 4:  Inside Filter method verify the token
+*********************************************************************************************************************************
